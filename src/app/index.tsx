@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const BOARD_COLS = 10;
 const BOARD_ROWS = 16;
+const BOARD_CELL_MARGIN = 0.25;
+const BOARD_CONTENT_PADDING = 2;
+const BOARD_GRID_SCALE = 0.88;
+const LCD_BACKGROUND = '#b8cca2';
+const LCD_GRID = '#99ad83';
+const LCD_BLOCK = '#18251b';
+const LCD_BLOCK_EDGE = '#101a13';
 
 type BoardCell = string | null;
 
@@ -64,16 +71,6 @@ const TETROMINOES: Record<string, number[][]> = {
   ],
 };
 
-const COLORS: Record<string, string> = {
-  I: '#6ee7f9',
-  O: '#facc15',
-  T: '#c084fc',
-  S: '#4ade80',
-  Z: '#f87171',
-  J: '#60a5fa',
-  L: '#fb923c',
-};
-
 const DEFAULT_PIECES = Object.keys(TETROMINOES);
 
 const clamp = (value: number, min: number, max: number) =>
@@ -92,7 +89,7 @@ function createPiece(type = DEFAULT_PIECES[Math.floor(Math.random() * DEFAULT_PI
     matrix,
     x: Math.floor((BOARD_COLS - matrix[0].length) / 2),
     y: 0,
-    color: COLORS[type],
+    color: LCD_BLOCK,
   };
 }
 
@@ -160,7 +157,7 @@ function clearCompletedLines(board: BoardCell[][]): { board: BoardCell[][]; clea
 }
 
 function getPreviewRows(piece: Piece): string[][] {
-  return piece.matrix.map((row) => row.map((cell) => (cell ? piece.color : '#bde7c6')));
+  return piece.matrix.map((row) => row.map((cell) => (cell ? LCD_BLOCK : LCD_BACKGROUND)));
 }
 
 function createInitialClassicState(): ClassicGameState {
@@ -219,7 +216,7 @@ function stepClassicGame(state: ClassicGameState): ClassicGameState {
   const newLines = result.cleared;
   const nextScore = state.score + [0, 100, 300, 500, 800][newLines] * state.level;
   const nextLevel = Math.max(1, Math.floor((state.lines + newLines) / 10) + 1);
-  const nextSpeed = Math.min(3, Math.max(1, nextLevel));
+  const nextSpeed = Math.min(10, Math.max(1, nextLevel));
 
   const withStats = {
     ...state,
@@ -275,7 +272,11 @@ function moveClassicPiece(
 
   if (action === 'down') {
     if (!collides(state.board, state.current, 0, 1, state.current.matrix)) {
-      return { ...state, current: { ...state.current, y: state.current.y + 1 }, score: state.score + 10 };
+      return {
+        ...state,
+        current: { ...state.current, y: state.current.y + 1 },
+        score: state.score + 10 * state.level,
+      };
     }
     return stepClassicGame(state);
   }
@@ -565,43 +566,146 @@ function tickBreakerGame(
   };
 }
 
-const gameModes = ['Classic', 'Brick Breaker'] as const;
-type GameMode = (typeof gameModes)[number];
+type GameMode = 'Classic' | 'Brick Breaker';
+type SoundEffect = 'move' | 'rotate' | 'land' | 'lineClear' | 'gameOver' | 'collision' | 'victory';
+type PhysicalButtonTone = 'yellow' | 'red' | 'green' | 'black' | 'muted';
+type PhysicalButtonSize = 'utility' | 'direction' | 'rotate';
+
+type PhysicalButtonProps = {
+  tone: PhysicalButtonTone;
+  size: PhysicalButtonSize;
+  children?: ReactNode;
+};
 
 export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const consoleWidth = Math.min(screenWidth - 32, 460);
   const shellWidth = consoleWidth;
-  const shellHeight = Math.min(Math.max(screenHeight * 0.94, 540), 820);
-  const breakerBoardWidth = shellWidth - 148;
-  const breakerBoardHeight = Math.min(300, Math.max(170, shellHeight * 0.36));
+  const shellHeight = Math.min(Math.max(screenHeight * 0.975, 540), 820);
+  const breakerBoardWidth = Math.max(150, Math.floor(shellWidth * 0.55));
+  const breakerBoardHeight = Math.min(300, Math.max(190, shellHeight * 0.37));
 
   const [mode, setMode] = useState<GameMode>('Classic');
   const [soundOn, setSoundOn] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [classicGame, setClassicGame] = useState<ClassicGameState>(() => createInitialClassicState());
   const [breakerGame, setBreakerGame] = useState<BreakerGameState>(() =>
     createBreakerState(breakerBoardWidth, breakerBoardHeight, 1, 'ready'),
   );
+  const [classicBoardLayout, setClassicBoardLayout] = useState({ width: 0, height: 0 });
+  const moveSound = useAudioPlayer(require('../../assets/audio/move.wav'));
+  const rotateSound = useAudioPlayer(require('../../assets/audio/rotate.wav'));
+  const landSound = useAudioPlayer(require('../../assets/audio/land.wav'));
+  const lineClearSound = useAudioPlayer(require('../../assets/audio/lineClear.wav'));
+  const gameOverSound = useAudioPlayer(require('../../assets/audio/gameOver.wav'));
+  const collisionSound = useAudioPlayer(require('../../assets/audio/collision.wav'));
+  const victorySound = useAudioPlayer(require('../../assets/audio/victory.wav'));
+  const soundPlayers = useMemo(() => ({
+    move: moveSound,
+    rotate: rotateSound,
+    land: landSound,
+    lineClear: lineClearSound,
+    gameOver: gameOverSound,
+    collision: collisionSound,
+    victory: victorySound,
+  }), [moveSound, rotateSound, landSound, lineClearSound, gameOverSound, collisionSound, victorySound]);
+  const playSound = useCallback((effect: SoundEffect) => {
+    const player = soundPlayers[effect];
+    if (!soundOn || !player.isLoaded) return;
+
+    void player.seekTo(0)
+      .then(() => {
+        if (soundOn) player.play();
+      })
+      .catch((error: unknown) => console.warn('Unable to play game sound', error));
+  }, [soundOn, soundPlayers]);
+  const previousClassicGame = useRef(classicGame);
+  const previousBreakerGame = useRef(breakerGame);
 
   const boardCellSize = useMemo(
-    () => Math.max(11, Math.min(17, Math.floor((shellWidth - 210) / BOARD_COLS))),
+    () => Math.max(8, Math.min(17, Math.floor((shellWidth * 0.9 - 140) / BOARD_COLS))),
     [shellWidth],
   );
+  const boardContentWidth = classicBoardLayout.width - 2 - BOARD_CONTENT_PADDING * 2;
+  const boardContentHeight = classicBoardLayout.height - 2 - BOARD_CONTENT_PADDING * 2;
+  const boardCellPitchX = boardContentWidth > 0
+    ? boardContentWidth * BOARD_GRID_SCALE / BOARD_COLS
+    : boardCellSize + BOARD_CELL_MARGIN * 2;
+  const boardCellPitchY = boardContentHeight > 0
+    ? boardContentHeight * BOARD_GRID_SCALE / BOARD_ROWS
+    : boardCellSize + BOARD_CELL_MARGIN * 2;
+  const boardCellWidth = boardCellPitchX - BOARD_CELL_MARGIN * 2;
+  const boardCellHeight = boardCellPitchY - BOARD_CELL_MARGIN * 2;
+  const boardGridOffsetX = Math.max(0, boardContentWidth * (1 - BOARD_GRID_SCALE) / 2);
+  const boardGridOffsetY = Math.max(0, boardContentHeight * (1 - BOARD_GRID_SCALE) / 2);
 
   useEffect(() => {
-    if (mode !== 'Classic' || classicGame.paused || classicGame.gameOver) {
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      interruptionMode: 'mixWithOthers',
+    }).catch((error: unknown) => console.warn('Unable to configure game audio', error));
+  }, []);
+
+  useEffect(() => {
+    for (const player of Object.values(soundPlayers)) {
+      player.muted = !soundOn;
+      player.volume = 0.35;
+      if (!soundOn && player.playing) player.pause();
+    }
+  }, [soundOn, soundPlayers]);
+
+  useEffect(() => {
+    const previous = previousClassicGame.current;
+    previousClassicGame.current = classicGame;
+    if (previous === classicGame) return;
+
+    if (!previous.gameOver && classicGame.gameOver) playSound('gameOver');
+    const linesCleared = classicGame.lines > previous.lines;
+    if (classicGame.lines > previous.lines) {
+      playSound('lineClear');
+    }
+    if (
+      previous.board !== classicGame.board &&
+      (classicGame.board.some((row) => row.some(Boolean)) || linesCleared)
+    ) {
+      playSound('land');
+    }
+  }, [classicGame, playSound]);
+
+  useEffect(() => {
+    const previous = previousBreakerGame.current;
+    previousBreakerGame.current = breakerGame;
+    if (previous === breakerGame) return;
+
+    if (previous.status !== breakerGame.status) {
+      if (breakerGame.status === 'won') playSound('victory');
+      if (breakerGame.status === 'lost') playSound('gameOver');
+      return;
+    }
+
+    if (
+      previous.status === 'playing' &&
+      (Math.sign(previous.ball.vx) !== Math.sign(breakerGame.ball.vx) ||
+        Math.sign(previous.ball.vy) !== Math.sign(breakerGame.ball.vy))
+    ) {
+      playSound('collision');
+    }
+  }, [breakerGame, playSound]);
+
+  useEffect(() => {
+    if (mode !== 'Classic' || settingsOpen || classicGame.paused || classicGame.gameOver) {
       return undefined;
     }
 
     const intervalId = setInterval(() => {
       setClassicGame((previous) => stepClassicGame(previous));
-    }, Math.max(120, 520 - classicGame.level * 40));
+    }, Math.max(90, 540 - (classicGame.level - 1) * 45));
 
     return () => clearInterval(intervalId);
-  }, [classicGame.level, classicGame.paused, classicGame.gameOver, mode]);
+  }, [classicGame.level, classicGame.paused, classicGame.gameOver, mode, settingsOpen]);
 
   useEffect(() => {
-    if (mode !== 'Brick Breaker' || breakerGame.status !== 'playing') {
+    if (mode !== 'Brick Breaker' || settingsOpen || breakerGame.status !== 'playing') {
       return undefined;
     }
 
@@ -612,7 +716,7 @@ export default function HomeScreen() {
     }, 16);
 
     return () => clearInterval(intervalId);
-  }, [breakerBoardHeight, breakerBoardWidth, breakerGame.status, mode]);
+  }, [breakerBoardHeight, breakerBoardWidth, breakerGame.status, mode, settingsOpen]);
 
   const handleClassicAction = (action: 'left' | 'right' | 'down' | 'rotate' | 'start' | 'pause') => {
     if (action === 'start') {
@@ -629,7 +733,17 @@ export default function HomeScreen() {
       return;
     }
 
-    setClassicGame((previous) => moveClassicPiece(previous, action));
+    const nextGame = moveClassicPiece(classicGame, action);
+    if (nextGame !== classicGame) {
+      setClassicGame(nextGame);
+      if (nextGame.board === classicGame.board) {
+        playSound(action === 'rotate' ? 'rotate' : 'move');
+      }
+    }
+  };
+
+  const handleClassicDrop = () => {
+    setClassicGame((previous) => dropClassicPiece(previous));
   };
 
   const handleBreakerAction = (action: 'left' | 'right' | 'down' | 'rotate' | 'pause' | 'start') => {
@@ -658,12 +772,12 @@ export default function HomeScreen() {
     }
 
     if (action === 'left') {
-      setBreakerGame((previous) => moveBreakerPaddle(previous, -24, breakerBoardWidth));
+      setBreakerGame((previous) => moveBreakerPaddle(previous, -36, breakerBoardWidth));
       return;
     }
 
     if (action === 'right') {
-      setBreakerGame((previous) => moveBreakerPaddle(previous, 24, breakerBoardWidth));
+      setBreakerGame((previous) => moveBreakerPaddle(previous, 36, breakerBoardWidth));
       return;
     }
 
@@ -708,22 +822,34 @@ export default function HomeScreen() {
     return (
       <View style={styles.screenContent}>
         <View style={styles.lcdPanel}>
-          <View style={styles.boardWrap}>
+          <View
+            testID="classic-board"
+            onLayout={(event) => {
+              const { width, height } = event.nativeEvent.layout;
+              setClassicBoardLayout((previous) =>
+                previous.width === width && previous.height === height
+                  ? previous
+                  : { width, height },
+              );
+            }}
+            style={styles.boardWrap}>
             {classicGame.board.map((row, rowIndex) => (
               <View key={`row-${rowIndex}`} style={styles.boardRow}>
                 {row.map((cell, colIndex) => (
                   <View
+                    testID={`board-cell-${rowIndex}-${colIndex}`}
                     key={`cell-${rowIndex}-${colIndex}`}
                     style={[
                       styles.boardCell,
                       {
-                        width: boardCellSize,
-                        height: boardCellSize,
-                        backgroundColor: cell || '#bde7c6',
-                        borderColor: cell ? '#0f172a' : '#8ad9a0',
+                        width: boardCellWidth,
+                        height: boardCellHeight,
+                        backgroundColor: cell ? LCD_BLOCK : LCD_BACKGROUND,
+                        borderColor: cell ? LCD_BLOCK_EDGE : LCD_GRID,
                       },
-                    ]}
-                  />
+                    ]}>
+                    {cell ? <View style={styles.blockInset} /> : null}
+                  </View>
                 ))}
               </View>
             ))}
@@ -737,53 +863,74 @@ export default function HomeScreen() {
 
                 return (
                   <View
+                    testID={`falling-cell-${y}-${x}`}
                     key={`active-${rowIndex}-${colIndex}`}
                     style={[
                       styles.fallingCell,
                       {
-                        width: boardCellSize,
-                        height: boardCellSize,
-                        left: x * boardCellSize + 2,
-                        top: y * boardCellSize + 2,
-                        backgroundColor: classicGame.current.color,
-                        borderColor: '#0f172a',
+                        width: boardCellWidth,
+                        height: boardCellHeight,
+                        left: x * boardCellPitchX + BOARD_CONTENT_PADDING + BOARD_CELL_MARGIN + boardGridOffsetX,
+                        top: y * boardCellPitchY + BOARD_CONTENT_PADDING + BOARD_CELL_MARGIN + boardGridOffsetY,
+                        backgroundColor: LCD_BLOCK,
+                        borderColor: LCD_BLOCK_EDGE,
                       },
                     ]}
-                  />
+                  >
+                    <View style={styles.blockInset} />
+                  </View>
                 );
               }),
+            )}
+
+            {(classicGame.paused || classicGame.gameOver) && (
+              <View style={styles.classicOverlay}>
+                <Text style={styles.classicOverlayTitle}>
+                  {classicGame.gameOver ? 'GAME OVER' : 'PAUSED'}
+                </Text>
+                <Text style={styles.classicOverlayText}>SCORE {classicGame.score}</Text>
+                <Text style={styles.classicOverlayText}>PRESS RESET TO PLAY</Text>
+              </View>
             )}
           </View>
 
           <View style={styles.sidePanel}>
-            <Text style={styles.sideTitle}>Next</Text>
-            <View style={styles.previewGrid}>
-              {preview.map((row, rowIndex) => (
-                <View key={`preview-row-${rowIndex}`} style={styles.previewRow}>
-                  {row.map((cell, colIndex) => (
-                    <View
-                      key={`preview-${rowIndex}-${colIndex}`}
-                      style={[
-                        styles.previewCell,
-                        {
-                          width: 7,
-                          height: 7,
-                          backgroundColor: cell,
-                          borderColor: cell === '#0f172a' ? '#0f172a' : '#2b4a2f',
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-              ))}
+            <View style={styles.statsBlock}>
+              <Text style={styles.statLabel}>SCORE</Text>
+              <Text style={styles.statValue}>{String(classicGame.score).padStart(6, '0')}</Text>
+              <Text style={styles.statLabel}>LEVEL</Text>
+              <Text style={styles.statValue}>{String(classicGame.level).padStart(2, '0')}</Text>
+              <Text style={styles.statLabel}>SPEED</Text>
+              <Text style={styles.statSmall}>{classicGame.speed}</Text>
+              <Text style={styles.statLabel}>HIGH</Text>
+              <Text style={styles.statSmall}>{classicGame.highScore}</Text>
+              <Text style={styles.statLabel}>GOAL</Text>
+              <Text style={styles.statSmall}>{classicGame.goal}</Text>
             </View>
 
-            <View style={styles.statsBlock}>
-              <Text style={styles.statText}>Score {classicGame.score}</Text>
-              <Text style={styles.statText}>High {classicGame.highScore}</Text>
-              <Text style={styles.statText}>Goal {classicGame.goal}</Text>
-              <Text style={styles.statText}>Lvl {classicGame.level}</Text>
-              <Text style={styles.statText}>Speed {classicGame.speed}</Text>
+            <View style={styles.previewSection}>
+              <Text style={styles.sideTitle}>NEXT</Text>
+              <View style={styles.previewGrid}>
+                {preview.map((row, rowIndex) => (
+                  <View key={`preview-row-${rowIndex}`} style={styles.previewRow}>
+                    {row.map((cell, colIndex) => (
+                      <View
+                        key={`preview-${rowIndex}-${colIndex}`}
+                        style={[
+                          styles.previewCell,
+                          {
+                            width: 7,
+                            height: 7,
+                            backgroundColor: cell,
+                            borderColor: cell === LCD_BLOCK ? LCD_BLOCK_EDGE : LCD_GRID,
+                          },
+                        ]}>
+                        {cell === LCD_BLOCK ? <View style={styles.previewBlockInset} /> : null}
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
             </View>
           </View>
         </View>
@@ -797,64 +944,82 @@ export default function HomeScreen() {
 
     return (
       <View style={styles.screenContent}>
-        <View style={styles.breakerViewport}>
-          <View style={[styles.breakerBoard, { width: boardWidth, height: boardHeight }]}>
-            {breakerGame.bricks.map((brick) =>
-              brick.alive ? (
-                <View
-                  key={brick.id}
-                  style={[
-                    styles.breakerBrick,
-                    {
-                      left: brick.x,
-                      top: brick.y,
-                      width: brick.width,
-                      height: brick.height,
-                      backgroundColor: brick.color,
-                    },
-                  ]}
-                />
-              ) : null,
-            )}
-
+        <View style={styles.breakerPanel}>
+          <View style={styles.breakerViewport}>
             <View
-              style={[
-                styles.breakerPaddle,
-                {
-                  left: breakerGame.paddle.x,
-                  top: breakerGame.paddle.y,
-                  width: breakerGame.paddle.width,
-                  height: breakerGame.paddle.height,
-                },
-              ]}
-            />
+              testID="breaker-board"
+              style={[styles.breakerBoard, { width: boardWidth, height: boardHeight }]}>
+              {breakerGame.bricks.map((brick) =>
+                brick.alive ? (
+                  <View
+                    key={brick.id}
+                    style={[
+                      styles.breakerBrick,
+                      {
+                        left: brick.x,
+                        top: brick.y,
+                        width: brick.width,
+                        height: brick.height,
+                        backgroundColor: brick.color,
+                      },
+                    ]}
+                  />
+                ) : null,
+              )}
 
-            <View
-              style={[
-                styles.breakerBall,
-                {
-                  width: breakerGame.ball.radius * 2,
-                  height: breakerGame.ball.radius * 2,
-                  left: breakerGame.ball.x - breakerGame.ball.radius,
-                  top: breakerGame.ball.y - breakerGame.ball.radius,
-                },
-              ]}
-            />
+              <View
+                testID="breaker-paddle"
+                style={[
+                  styles.breakerPaddle,
+                  {
+                    left: breakerGame.paddle.x,
+                    top: breakerGame.paddle.y,
+                    width: breakerGame.paddle.width,
+                    height: breakerGame.paddle.height,
+                  },
+                ]}
+              />
 
-            {(breakerGame.status === 'ready' || breakerGame.status === 'paused' || breakerGame.status === 'won' || breakerGame.status === 'lost') && (
-              <View style={styles.breakerOverlay}>
-                <Text style={styles.breakerOverlayTitle}>
-                  {breakerGame.status === 'ready'
-                    ? 'Ready'
-                    : breakerGame.status === 'paused'
-                      ? 'Paused'
-                      : breakerGame.status === 'won'
-                        ? 'You Win'
-                        : 'Game Over'}
-                </Text>
-                <Text style={styles.breakerOverlayText}>Score: {breakerGame.score}</Text>
-              </View>
-            )}
+              <View
+                style={[
+                  styles.breakerBall,
+                  {
+                    width: breakerGame.ball.radius * 2,
+                    height: breakerGame.ball.radius * 2,
+                    left: breakerGame.ball.x - breakerGame.ball.radius,
+                    top: breakerGame.ball.y - breakerGame.ball.radius,
+                  },
+                ]}
+              />
+
+              {(breakerGame.status === 'ready' || breakerGame.status === 'paused' || breakerGame.status === 'won' || breakerGame.status === 'lost') && (
+                <View style={styles.breakerOverlay}>
+                  <Text style={styles.breakerOverlayTitle}>
+                    {breakerGame.status === 'ready'
+                      ? 'Ready'
+                      : breakerGame.status === 'paused'
+                        ? 'Paused'
+                        : breakerGame.status === 'won'
+                          ? 'You Win'
+                          : 'Game Over'}
+                  </Text>
+                  <Text style={styles.breakerOverlayText}>Score: {breakerGame.score}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.breakerStatsPanel}>
+            <Text style={styles.statLabel}>SCORE</Text>
+            <Text testID="breaker-score" style={styles.statValue}>
+              {String(breakerGame.score).padStart(6, '0')}
+            </Text>
+            <Text style={styles.statLabel}>LEVEL</Text>
+            <Text style={styles.statValue}>{String(breakerGame.level).padStart(2, '0')}</Text>
+            <Text style={styles.statLabel}>LIVES</Text>
+            <Text testID="breaker-lives" style={styles.statValue}>
+              {String(breakerGame.lives).padStart(2, '0')}
+            </Text>
           </View>
         </View>
       </View>
@@ -865,8 +1030,9 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.consoleShell, { width: shellWidth, height: shellHeight }]}>
         <View style={styles.topHeader}>
-          <Text style={styles.topBrand}>SUPER</Text>
-          <Text style={styles.modelTag}>9999 IN 1</Text>
+          <View style={styles.brandLine} />
+          <Text style={styles.topBrand}>BRICK GAME</Text>
+          <View style={styles.brandLine} />
         </View>
 
         <View style={[styles.displayHousing, { height: shellHeight * 0.43 }]}>
@@ -882,25 +1048,30 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.displayCenter}>
-            <View style={styles.modeRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === 'Classic' }}
-                onPress={() => setMode('Classic')}
-                style={[styles.modeButton, mode === 'Classic' && styles.modeButtonActive]}>
-                <Text style={styles.modeButtonText}>CLASSIC</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === 'Brick Breaker' }}
-                onPress={() => setMode('Brick Breaker')}
-                style={[styles.modeButton, mode === 'Brick Breaker' && styles.modeButtonActive]}>
-                <Text style={styles.modeButtonText}>BREAKER</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.lcdFrame}>
-              {mode === 'Classic' ? renderClassicScreen() : renderBreakerScreen()}
+            <View style={styles.screenMolding}>
+              <View style={styles.lcdFrame}>
+                {mode === 'Classic' ? renderClassicScreen() : renderBreakerScreen()}
+                {settingsOpen && (
+                  <View style={styles.settingsOverlay}>
+                    <Text style={styles.settingsTitle}>SETTINGS</Text>
+                    <Text style={styles.settingsLabel}>SOUND EFFECTS</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={soundOn ? 'Turn sound off' : 'Turn sound on'}
+                      onPress={() => setSoundOn((value) => !value)}
+                      style={styles.settingsAction}>
+                      <Text style={styles.settingsActionText}>{soundOn ? 'ON' : 'OFF'}</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Close settings"
+                      onPress={() => setSettingsOpen(false)}
+                      style={styles.settingsAction}>
+                      <Text style={styles.settingsActionText}>DONE</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
@@ -923,35 +1094,45 @@ export default function HomeScreen() {
         <View style={styles.utilityRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Start game"
-            onPress={() => (mode === 'Classic' ? handleClassicAction('start') : handleBreakerAction('start'))}
-            style={styles.utilityButton}>
-            <View style={styles.utilityCap} />
-            <Text style={styles.utilityText}>ON/OFF</Text>
+            accessibilityLabel="Reset game"
+            onPress={resetActiveGame}
+            style={({ pressed }) => [styles.utilityButton, pressed && styles.buttonPressed]}>
+            <PhysicalButton tone="red" size="utility" />
+            <Text style={styles.utilityText}>RESET</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Pause or resume game"
-            onPress={() => (mode === 'Classic' ? handleClassicAction('pause') : handleBreakerAction('pause'))}
-            style={styles.utilityButton}>
-            <View style={styles.utilityCap} />
-            <Text style={styles.utilityText}>S/P</Text>
+            accessibilityLabel="Open settings"
+            onPress={() => setSettingsOpen(true)}
+            style={({ pressed }) => [styles.utilityButton, pressed && styles.buttonPressed]}>
+            <PhysicalButton tone="black" size="utility" />
+            <Text style={styles.utilityText}>SETTINGS</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={soundOn ? 'Mute sound' : 'Enable sound'}
             onPress={() => setSoundOn((value) => !value)}
-            style={styles.utilityButton}>
-            <View style={styles.utilityCap} />
+            style={({ pressed }) => [styles.utilityButton, pressed && styles.buttonPressed]}>
+            <PhysicalButton tone={soundOn ? 'green' : 'muted'} size="utility" />
             <Text style={styles.utilityText}>SOUND</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Reset game"
-            onPress={resetActiveGame}
-            style={styles.utilityButton}>
-            <View style={styles.utilityCap} />
-            <Text style={styles.utilityText}>RESET</Text>
+            accessibilityLabel="Pause or resume game"
+            onPress={() => (mode === 'Classic'
+              ? handleClassicAction('pause')
+              : handleBreakerAction(breakerGame.status === 'ready' ? 'start' : 'pause'))}
+            style={({ pressed }) => [styles.utilityButton, pressed && styles.buttonPressed]}>
+            <PhysicalButton tone="green" size="utility" />
+            <Text style={styles.utilityText}>PAUSE</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Switch game mode"
+            onPress={() => setMode((current) => current === 'Classic' ? 'Brick Breaker' : 'Classic')}
+            style={({ pressed }) => [styles.utilityButton, pressed && styles.buttonPressed]}>
+            <PhysicalButton tone="green" size="utility" />
+            <Text style={styles.utilityText}>OPTIONS</Text>
           </Pressable>
         </View>
 
@@ -959,43 +1140,57 @@ export default function HomeScreen() {
           <View style={styles.directionPad}>
             <View style={styles.padRow}>
               <View style={styles.padSpacer} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Drop piece"
-                onPress={() => mode === 'Classic'
-                  ? setClassicGame((previous) => dropClassicPiece(previous))
-                  : handleBreakerAction('start')}
-                style={styles.padButton}>
-                <Text style={styles.buttonGlyph}>▲</Text>
-              </Pressable>
+              <View style={styles.padControl}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Drop piece"
+                  onPress={() => mode === 'Classic'
+                    ? handleClassicDrop()
+                    : handleBreakerAction('start')}
+                  style={({ pressed }) => [styles.padButton, pressed && styles.buttonPressed]}>
+                  <PhysicalButton tone="yellow" size="direction" />
+                </Pressable>
+                <Text style={styles.padLabel}>QUICK DOWN</Text>
+              </View>
               <View style={styles.padSpacer} />
             </View>
             <View style={styles.padRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Move left"
-                onPress={() => (mode === 'Classic' ? handleClassicAction('left') : handleBreakerAction('left'))}
-                style={styles.padButton}>
-                <Text style={styles.buttonGlyph}>◀</Text>
-              </Pressable>
-              <View style={styles.padHub} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Move right"
-                onPress={() => (mode === 'Classic' ? handleClassicAction('right') : handleBreakerAction('right'))}
-                style={styles.padButton}>
-                <Text style={styles.buttonGlyph}>▶</Text>
-              </Pressable>
+              <View style={styles.padControl}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Move left"
+                  onPress={() => (mode === 'Classic' ? handleClassicAction('left') : handleBreakerAction('left'))}
+                  style={({ pressed }) => [styles.padButton, pressed && styles.buttonPressed]}>
+                  <PhysicalButton tone="yellow" size="direction" />
+                </Pressable>
+                <Text style={styles.padLabel}>LEFT SPEED-</Text>
+              </View>
+              <View style={styles.padHub}>
+                <Text style={styles.padHubGlyph}>✥</Text>
+              </View>
+              <View style={styles.padControl}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Move right"
+                  onPress={() => (mode === 'Classic' ? handleClassicAction('right') : handleBreakerAction('right'))}
+                  style={({ pressed }) => [styles.padButton, pressed && styles.buttonPressed]}>
+                  <PhysicalButton tone="yellow" size="direction" />
+                </Pressable>
+                <Text style={styles.padLabel}>RIGHT SPEED+</Text>
+              </View>
             </View>
             <View style={styles.padRow}>
               <View style={styles.padSpacer} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Move down"
-                onPress={() => (mode === 'Classic' ? handleClassicAction('down') : handleBreakerAction('down'))}
-                style={styles.padButton}>
-                <Text style={styles.buttonGlyph}>▼</Text>
-              </Pressable>
+              <View style={styles.padControl}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Move down"
+                  onPress={() => (mode === 'Classic' ? handleClassicAction('down') : handleBreakerAction('down'))}
+                  style={({ pressed }) => [styles.padButton, pressed && styles.buttonPressed]}>
+                  <PhysicalButton tone="yellow" size="direction" />
+                </Pressable>
+                <Text style={styles.padLabel}>DOWN LEVEL+</Text>
+              </View>
               <View style={styles.padSpacer} />
             </View>
           </View>
@@ -1004,10 +1199,8 @@ export default function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Rotate"
             onPress={() => (mode === 'Classic' ? handleClassicAction('rotate') : handleBreakerAction('rotate'))}
-            style={styles.rotateControl}>
-            <View style={[styles.utilityCap, styles.rotateCap]}>
-              <Text style={styles.rotateGlyph}>⟳</Text>
-            </View>
+            style={({ pressed }) => [styles.rotateControl, pressed && styles.buttonPressed]}>
+            <PhysicalButton tone="yellow" size="rotate" />
             <Text style={styles.controlLabel}>ROTATE</Text>
           </Pressable>
         </View>
@@ -1030,21 +1223,21 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#071b4d',
+    backgroundColor: '#eaf4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   consoleShell: {
-    backgroundColor: '#0758c7',
+    backgroundColor: '#249fc5',
     borderRadius: 24,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    shadowColor: '#03153d',
+    shadowColor: '#0c5d76',
     shadowOpacity: 0.46,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 9 },
     borderWidth: 3,
-    borderColor: '#4b91f2',
+    borderColor: '#83e5f5',
     alignItems: 'center',
   },
   topHeader: {
@@ -1054,9 +1247,16 @@ const styles = StyleSheet.create({
     height: 30,
     marginBottom: 5,
   },
+  brandLine: {
+    flex: 1,
+    height: 5,
+    backgroundColor: '#123443',
+    marginHorizontal: 10,
+    borderRadius: 3,
+  },
   topBrand: {
-    color: '#dfe9ff',
-    fontSize: 17,
+    color: '#123443',
+    fontSize: 23,
     fontWeight: '900',
     letterSpacing: 0,
   },
@@ -1075,14 +1275,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   decorColumn: {
-    width: 24,
+    width: 13,
     height: '82%',
     alignItems: 'center',
     justifyContent: 'space-around',
   },
   decorCluster: {
-    width: 24,
-    height: 24,
+    width: 16,
+    height: 16,
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
@@ -1090,55 +1290,77 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   decorTile: {
-    width: 7,
-    height: 7,
+    width: 6,
+    height: 6,
     borderWidth: 1,
     borderColor: '#9bc8ff',
     backgroundColor: '#1765ce',
   },
   displayCenter: {
-    width: '80%',
+    width: '92%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  screenMolding: {
+    width: '100%',
+    flex: 1,
+    padding: 5,
+    borderRadius: 10,
+    backgroundColor: '#113443',
+    borderWidth: 3,
+    borderTopColor: '#83edfa',
+    borderLeftColor: '#53cfe3',
+    borderRightColor: '#0a2936',
+    borderBottomColor: '#071e29',
+    shadowColor: '#092c39',
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
+  },
   modeRow: {
     width: '100%',
-    height: 20,
+    height: 42,
     flexDirection: 'row',
-    marginBottom: 4,
-    gap: 4,
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 8,
   },
   modeButton: {
     flex: 1,
-    paddingVertical: 2,
-    borderRadius: 3,
-    backgroundColor: '#17458e',
+    minHeight: 36,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#126f94',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#6fa8f3',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#80e7f5',
   },
   modeButtonActive: {
-    backgroundColor: '#3476d0',
+    backgroundColor: '#103e62',
+    borderColor: '#f2fcff',
   },
   modeButtonText: {
-    color: '#edf6ff',
-    fontSize: 7,
-    fontWeight: '800',
+    color: '#f2fcff',
+    fontSize: 10,
+    fontWeight: '900',
     letterSpacing: 0,
   },
   lcdFrame: {
+    position: 'relative',
     width: '100%',
     flex: 1,
-    backgroundColor: '#8e9d7e',
+    backgroundColor: '#103849',
     borderRadius: 5,
-    padding: 6,
-    borderWidth: 4,
-    borderColor: '#a5b594',
-    shadowColor: '#03153d',
-    shadowOpacity: 0.32,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    padding: 5,
+    borderWidth: 3,
+    borderColor: '#55d6f1',
+    shadowColor: '#a3f1ff',
+    shadowOpacity: 0.65,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 0 },
   },
   screenContent: {
     flex: 1,
@@ -1151,8 +1373,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   boardWrap: {
+    position: 'relative',
     flex: 1,
-    backgroundColor: '#bde7c6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: LCD_BACKGROUND,
     borderRadius: 2,
     padding: 2,
     borderWidth: 1,
@@ -1162,9 +1387,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   boardCell: {
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderRadius: 1,
-    margin: 0.5,
+    margin: BOARD_CELL_MARGIN,
+  },
+  blockInset: {
+    flex: 1,
+    margin: 2,
+    backgroundColor: '#95a986',
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderTopColor: '#becbaa',
+    borderLeftColor: '#aab99a',
+    borderRightColor: '#334a34',
+    borderBottomColor: '#263b2b',
+  },
+  previewBlockInset: {
+    flex: 1,
+    margin: 1,
+    backgroundColor: '#95a986',
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: '#becbaa',
+    borderLeftColor: '#aab99a',
+    borderRightColor: '#334a34',
+    borderBottomColor: '#263b2b',
   },
   fallingCell: {
     position: 'absolute',
@@ -1173,7 +1424,7 @@ const styles = StyleSheet.create({
   },
   sidePanel: {
     width: 68,
-    backgroundColor: '#bde7c6',
+    backgroundColor: LCD_BACKGROUND,
     borderRadius: 2,
     padding: 3,
     borderWidth: 1,
@@ -1203,24 +1454,52 @@ const styles = StyleSheet.create({
   statsBlock: {
     gap: 2,
   },
-  statText: {
+  previewSection: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  statValue: {
     color: '#0f172a',
-    fontSize: 7,
-    fontWeight: '800',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: '900',
+  },
+  statSmall: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 11,
+    fontFamily: 'monospace',
+    fontWeight: '700',
   },
   breakerViewport: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#bde7c6',
+    backgroundColor: LCD_BACKGROUND,
     borderRadius: 2,
-    padding: 4,
+  },
+  breakerPanel: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 4,
+  },
+  breakerStatsPanel: {
+    width: 62,
+    padding: 3,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 4,
+    backgroundColor: LCD_BACKGROUND,
     borderWidth: 1,
     borderColor: '#1a2d1f',
   },
   breakerBoard: {
     position: 'relative',
-    backgroundColor: '#bde7c6',
+    backgroundColor: '#17233b',
     borderRadius: 3,
     overflow: 'hidden',
     borderWidth: 2,
@@ -1235,12 +1514,12 @@ const styles = StyleSheet.create({
   breakerPaddle: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: '#356b43',
+    backgroundColor: '#f8fafc',
   },
   breakerBall: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: '#234f30',
+    backgroundColor: '#f97316',
   },
   breakerOverlay: {
     ...StyleSheet.absoluteFill,
@@ -1259,6 +1538,59 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  classicOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 2,
+    backgroundColor: 'rgba(184, 204, 162, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  classicOverlayTitle: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  classicOverlayText: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 8,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  settingsOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 3,
+    backgroundColor: 'rgba(184,204,162,0.97)',
+  },
+  settingsTitle: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  settingsLabel: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  settingsAction: {
+    width: '72%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: LCD_BLOCK_EDGE,
+    backgroundColor: '#8fa27e',
+  },
+  settingsActionText: {
+    color: LCD_BLOCK_EDGE,
+    fontSize: 9,
+    fontWeight: '900',
+  },
   bodyGap: {
     width: '100%',
     height: 36,
@@ -1267,15 +1599,16 @@ const styles = StyleSheet.create({
   },
   bodySeam: {
     width: '100%',
-    height: 16,
+    height: 10,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#1766d0',
-    backgroundColor: '#0754bc',
+    borderColor: '#5bd5ef',
+    backgroundColor: '#147fa7',
   },
   utilityRow: {
-    width: '100%',
-    height: 48,
+    width: '68%',
+    alignSelf: 'flex-end',
+    height: 60,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
@@ -1286,89 +1619,173 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  utilityCap: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#f4d228',
+  buttonPressed: {
+    transform: [{ translateY: 3 }],
+    opacity: 0.96,
+  },
+  physicalButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#e5ad00',
-    shadowColor: '#03245e',
-    shadowOpacity: 0.38,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 2 },
+    padding: 3,
+    shadowColor: '#07546d',
+    shadowOpacity: 0.52,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 7,
+  },
+  physicalButtonUtility: {
+    width: 36,
+    height: 36,
+  },
+  physicalButtonDirection: {
+    width: 62,
+    height: 62,
+  },
+  physicalButtonRotate: {
+    width: 102,
+    height: 102,
+  },
+  physicalRimYellow: {
+    backgroundColor: '#a86e08',
+    borderColor: '#865606',
+  },
+  physicalRimRed: {
+    backgroundColor: '#a20d28',
+    borderColor: '#79081d',
+  },
+  physicalRimGreen: {
+    backgroundColor: '#08752c',
+    borderColor: '#075b24',
+  },
+  physicalRimBlack: {
+    backgroundColor: '#05090c',
+    borderColor: '#020406',
+  },
+  physicalRimMuted: {
+    backgroundColor: '#687681',
+    borderColor: '#4a5963',
+  },
+  physicalFace: {
+    flex: 1,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 999,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 6,
+    borderLeftWidth: 2,
+  },
+  physicalFaceYellow: {
+    backgroundColor: '#ffd52d',
+    borderTopColor: '#ffe36a',
+    borderRightColor: '#e9a911',
+    borderBottomColor: '#c78000',
+    borderLeftColor: '#f6ca37',
+  },
+  physicalFaceRed: {
+    backgroundColor: '#f5213b',
+    borderTopColor: '#ff6678',
+    borderRightColor: '#ce172e',
+    borderBottomColor: '#a30c20',
+    borderLeftColor: '#ed354c',
+  },
+  physicalFaceGreen: {
+    backgroundColor: '#20df58',
+    borderTopColor: '#59ed7b',
+    borderRightColor: '#13ad42',
+    borderBottomColor: '#087d2d',
+    borderLeftColor: '#31d85f',
+  },
+  physicalFaceBlack: {
+    backgroundColor: '#171d22',
+    borderTopColor: '#34515f',
+    borderRightColor: '#11161a',
+    borderBottomColor: '#030608',
+    borderLeftColor: '#263f4d',
+  },
+  physicalFaceMuted: {
+    backgroundColor: '#c4cbd5',
+    borderTopColor: '#f1f5f8',
+    borderRightColor: '#a1abb5',
+    borderBottomColor: '#687581',
+    borderLeftColor: '#dbe1e7',
+  },
+  physicalContent: {
+    zIndex: 1,
   },
   utilityText: {
     color: '#e4efff',
-    fontSize: 7,
-    fontWeight: '700',
-    marginTop: 3,
+    fontSize: 8,
+    fontWeight: '900',
+    marginTop: 4,
   },
   gameControlsRow: {
     width: '100%',
-    height: 106,
+    height: 214,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
   },
   directionPad: {
-    width: 108,
-    height: 82,
+    width: 204,
+    height: 192,
     justifyContent: 'space-between',
   },
   padRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 3,
+    minHeight: 62,
+  },
+  padControl: {
+    width: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   padSpacer: {
-    width: 42,
-    height: 30,
+    width: 68,
+    height: 62,
   },
   padButton: {
-    width: 34,
-    height: 25,
-    borderRadius: 4,
-    backgroundColor: '#f4d228',
-    borderWidth: 1,
-    borderColor: '#e4b000',
+    width: 68,
+    height: 62,
     alignItems: 'center',
     justifyContent: 'center',
   },
   padHub: {
-    width: 36,
-    height: 30,
-    backgroundColor: '#164c9d',
-    borderRadius: 3,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  padHubGlyph: {
+    color: '#e8f7fa',
+    fontSize: 23,
+    fontWeight: '800',
+  },
+  padLabel: {
+    color: '#f2f9ff',
+    fontSize: 8,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginTop: 4,
   },
   rotateControl: {
-    width: 82,
+    width: 110,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rotateCap: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rotateGlyph: {
-    color: '#17458e',
-    fontSize: 31,
-    fontWeight: '800',
   },
   controlLabel: {
     color: '#e4efff',
     fontSize: 7,
     fontWeight: '700',
     marginTop: 3,
-  },
-  buttonGlyph: {
-    color: '#17458e',
-    fontSize: 14,
-    fontWeight: '800',
   },
   logoArea: {
     width: '100%',
@@ -1383,7 +1800,7 @@ const styles = StyleSheet.create({
   },
   logoText: {
     color: '#dbeaff',
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: '900',
     transform: [{ rotate: '-20deg' }],
     textShadowColor: '#17458e',
@@ -1409,3 +1826,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+
+function PhysicalButton({ tone, size, children }: PhysicalButtonProps) {
+  const rimStyle = {
+    yellow: styles.physicalRimYellow,
+    red: styles.physicalRimRed,
+    green: styles.physicalRimGreen,
+    black: styles.physicalRimBlack,
+    muted: styles.physicalRimMuted,
+  }[tone];
+  const faceStyle = {
+    yellow: styles.physicalFaceYellow,
+    red: styles.physicalFaceRed,
+    green: styles.physicalFaceGreen,
+    black: styles.physicalFaceBlack,
+    muted: styles.physicalFaceMuted,
+  }[tone];
+  const sizeStyle = {
+    utility: styles.physicalButtonUtility,
+    direction: styles.physicalButtonDirection,
+    rotate: styles.physicalButtonRotate,
+  }[size];
+
+  return (
+    <View style={[styles.physicalButton, sizeStyle, rimStyle]}>
+      <View style={[styles.physicalFace, faceStyle]}>
+        <View style={styles.physicalContent}>{children}</View>
+      </View>
+    </View>
+  );
+}
