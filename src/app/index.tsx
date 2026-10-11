@@ -65,13 +65,13 @@ const TETROMINOES: Record<string, number[][]> = {
 };
 
 const COLORS: Record<string, string> = {
-  I: '#356b43',
-  O: '#356b43',
-  T: '#356b43',
-  S: '#356b43',
-  Z: '#356b43',
-  J: '#356b43',
-  L: '#356b43',
+  I: '#6ee7f9',
+  O: '#facc15',
+  T: '#c084fc',
+  S: '#4ade80',
+  Z: '#f87171',
+  J: '#60a5fa',
+  L: '#fb923c',
 };
 
 const DEFAULT_PIECES = Object.keys(TETROMINOES);
@@ -351,7 +351,7 @@ function createBricks(boardWidth: number, level: number): Brick[] {
   const topPadding = 18;
   const brickWidth = (boardWidth - leftPadding * 2 - gap * (columns - 1)) / columns;
   const brickHeight = 18;
-  const colors = ['#356b43', '#3d784b', '#477f54', '#2d603b', '#568b61'];
+  const colors = ['#7dd3fc', '#a78bfa', '#f9a8d4', '#fbbf24', '#4ade80'];
 
   const bricks: Brick[] = [];
 
