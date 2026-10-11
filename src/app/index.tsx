@@ -570,11 +570,11 @@ type GameMode = (typeof gameModes)[number];
 
 export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const consoleWidth = Math.min(screenWidth - 42, 320);
+  const consoleWidth = Math.min(screenWidth - 32, 460);
   const shellWidth = consoleWidth;
-  const shellHeight = Math.min(Math.max(screenHeight * 0.94, 620), 820);
-  const breakerBoardWidth = shellWidth - 172;
-  const breakerBoardHeight = 180;
+  const shellHeight = Math.min(Math.max(screenHeight * 0.94, 540), 820);
+  const breakerBoardWidth = shellWidth - 148;
+  const breakerBoardHeight = Math.min(300, Math.max(170, shellHeight * 0.36));
 
   const [mode, setMode] = useState<GameMode>('Classic');
   const [soundOn, setSoundOn] = useState(true);
@@ -584,7 +584,7 @@ export default function HomeScreen() {
   );
 
   const boardCellSize = useMemo(
-    () => Math.max(8, Math.min(9, Math.floor((shellWidth - 220) / BOARD_COLS))),
+    () => Math.max(11, Math.min(17, Math.floor((shellWidth - 210) / BOARD_COLS))),
     [shellWidth],
   );
 
@@ -869,7 +869,7 @@ export default function HomeScreen() {
           <Text style={styles.modelTag}>9999 IN 1</Text>
         </View>
 
-        <View style={styles.displayHousing}>
+        <View style={[styles.displayHousing, { height: shellHeight * 0.43 }]}>
           <View style={styles.decorColumn}>
             {Array.from({ length: 6 }, (_, index) => (
               <View key={`left-decor-${index}`} style={styles.decorCluster}>
@@ -1069,7 +1069,7 @@ const styles = StyleSheet.create({
   },
   displayHousing: {
     width: '100%',
-    height: 228,
+    height: '43%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1081,8 +1081,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   decorCluster: {
-    width: 18,
-    height: 18,
+    width: 24,
+    height: 24,
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
@@ -1097,7 +1097,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1765ce',
   },
   displayCenter: {
-    width: '60%',
+    width: '80%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1172,7 +1172,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   sidePanel: {
-    width: 48,
+    width: 68,
     backgroundColor: '#bde7c6',
     borderRadius: 2,
     padding: 3,
@@ -1182,7 +1182,7 @@ const styles = StyleSheet.create({
   },
   sideTitle: {
     color: '#0f172a',
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: 1,
@@ -1220,11 +1220,11 @@ const styles = StyleSheet.create({
   },
   breakerBoard: {
     position: 'relative',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#bde7c6',
     borderRadius: 3,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: '#2f3f52',
+    borderColor: '#315b3b',
   },
   breakerBrick: {
     position: 'absolute',
@@ -1235,12 +1235,12 @@ const styles = StyleSheet.create({
   breakerPaddle: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#356b43',
   },
   breakerBall: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: '#f97316',
+    backgroundColor: '#234f30',
   },
   breakerOverlay: {
     ...StyleSheet.absoluteFill,
@@ -1323,8 +1323,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   padSpacer: {
-    width: 34,
-    height: 25,
+    width: 42,
+    height: 30,
   },
   padButton: {
     width: 34,
@@ -1337,8 +1337,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   padHub: {
-    width: 30,
-    height: 25,
+    width: 36,
+    height: 30,
     backgroundColor: '#164c9d',
     borderRadius: 3,
   },
@@ -1379,7 +1379,7 @@ const styles = StyleSheet.create({
   },
   brandSpacer: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 12,
   },
   logoText: {
     color: '#dbeaff',
