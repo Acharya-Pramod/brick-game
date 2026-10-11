@@ -1138,6 +1138,10 @@ export default function HomeScreen() {
 
         <View style={styles.gameControlsRow}>
           <View style={styles.directionPad}>
+            <View pointerEvents="none" style={styles.padCross}>
+              <View style={styles.padCrossVertical} />
+              <View style={styles.padCrossHorizontal} />
+            </View>
             <View style={styles.padRow}>
               <View style={styles.padSpacer} />
               <View style={styles.padControl}>
@@ -1735,6 +1739,43 @@ const styles = StyleSheet.create({
     width: 204,
     height: 192,
     justifyContent: 'space-between',
+    position: 'relative',
+  },
+  padCross: {
+    position: 'absolute',
+    left: 25,
+    right: 25,
+    top: 18,
+    bottom: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 0,
+  },
+  padCrossVertical: {
+    position: 'absolute',
+    width: 54,
+    height: '100%',
+    borderRadius: 12,
+    backgroundColor: '#d99a16',
+    borderWidth: 2,
+    borderColor: '#ffdf70',
+    shadowColor: '#563b08',
+    shadowOpacity: 0.42,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  padCrossHorizontal: {
+    position: 'absolute',
+    width: '100%',
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: '#d99a16',
+    borderWidth: 2,
+    borderColor: '#ffdf70',
+    shadowColor: '#563b08',
+    shadowOpacity: 0.42,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 3 },
   },
   padRow: {
     flexDirection: 'row',
@@ -1759,15 +1800,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   padHub: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#a86f0d',
+    borderWidth: 2,
+    borderColor: '#f8d45e',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
+    shadowColor: '#563b08',
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
   },
   padHubGlyph: {
-    color: '#e8f7fa',
-    fontSize: 23,
-    fontWeight: '800',
+    color: '#fff0b0',
+    fontSize: 15,
+    fontWeight: '900',
   },
   padLabel: {
     color: '#f2f9ff',
