@@ -64,14 +64,15 @@ const TETROMINOES: Record<string, number[][]> = {
   ],
 };
 
+// Classic mode uses the restrained monochrome LCD look of a real handheld.
 const COLORS: Record<string, string> = {
-  I: '#6ee7f9',
-  O: '#facc15',
-  T: '#c084fc',
-  S: '#4ade80',
-  Z: '#f87171',
-  J: '#60a5fa',
-  L: '#fb923c',
+  I: '#17251b',
+  O: '#17251b',
+  T: '#17251b',
+  S: '#17251b',
+  Z: '#17251b',
+  J: '#17251b',
+  L: '#17251b',
 };
 
 const DEFAULT_PIECES = Object.keys(TETROMINOES);
