@@ -234,6 +234,23 @@ function stepClassicGame(state: ClassicGameState): ClassicGameState {
   return spawnNextPiece(withStats);
 }
 
+function dropClassicPiece(state: ClassicGameState): ClassicGameState {
+  if (state.paused || state.gameOver) {
+    return state;
+  }
+
+  let dropDistance = 0;
+  while (!collides(state.board, state.current, 0, dropDistance + 1)) {
+    dropDistance += 1;
+  }
+
+  return stepClassicGame({
+    ...state,
+    current: { ...state.current, y: state.current.y + dropDistance },
+    score: state.score + dropDistance * 2,
+  });
+}
+
 function moveClassicPiece(
   state: ClassicGameState,
   action: 'left' | 'right' | 'down' | 'rotate',
@@ -553,20 +570,21 @@ type GameMode = (typeof gameModes)[number];
 
 export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const consoleWidth = Math.min(screenWidth - 20, 380);
+  const consoleWidth = Math.min(screenWidth - 42, 320);
   const shellWidth = consoleWidth;
-  const shellHeight = Math.min(Math.max(screenHeight * 0.82, 640), 760);
-  const breakerBoardWidth = shellWidth - 82;
+  const shellHeight = Math.min(Math.max(screenHeight * 0.94, 620), 820);
+  const breakerBoardWidth = shellWidth - 172;
+  const breakerBoardHeight = 180;
 
   const [mode, setMode] = useState<GameMode>('Classic');
   const [soundOn, setSoundOn] = useState(true);
   const [classicGame, setClassicGame] = useState<ClassicGameState>(() => createInitialClassicState());
   const [breakerGame, setBreakerGame] = useState<BreakerGameState>(() =>
-    createBreakerState(breakerBoardWidth, 350, 1, 'ready'),
+    createBreakerState(breakerBoardWidth, breakerBoardHeight, 1, 'ready'),
   );
 
   const boardCellSize = useMemo(
-    () => Math.max(8, Math.min(17, Math.floor((shellWidth - 200) / BOARD_COLS))),
+    () => Math.max(8, Math.min(9, Math.floor((shellWidth - 220) / BOARD_COLS))),
     [shellWidth],
   );
 
@@ -588,15 +606,21 @@ export default function HomeScreen() {
     }
 
     const intervalId = setInterval(() => {
-      setBreakerGame((previous) => tickBreakerGame(previous, breakerBoardWidth, 350));
+      setBreakerGame((previous) =>
+        tickBreakerGame(previous, breakerBoardWidth, breakerBoardHeight),
+      );
     }, 16);
 
     return () => clearInterval(intervalId);
-  }, [breakerBoardWidth, breakerGame.status, mode]);
+  }, [breakerBoardHeight, breakerBoardWidth, breakerGame.status, mode]);
 
   const handleClassicAction = (action: 'left' | 'right' | 'down' | 'rotate' | 'start' | 'pause') => {
     if (action === 'start') {
-      setClassicGame((previous) => ({ ...previous, paused: !previous.paused }));
+      setClassicGame((previous) =>
+        previous.gameOver
+          ? { ...createInitialClassicState(), highScore: previous.highScore }
+          : { ...previous, paused: false },
+      );
       return;
     }
 
@@ -618,10 +642,18 @@ export default function HomeScreen() {
     }
 
     if (action === 'start') {
-      setBreakerGame((previous) => ({
-        ...previous,
-        status: previous.status === 'ready' || previous.status === 'lost' || previous.status === 'won' ? 'playing' : previous.status,
-      }));
+      setBreakerGame((previous) => {
+        if (previous.status === 'lost' || previous.status === 'won') {
+          return createBreakerState(breakerBoardWidth, breakerBoardHeight, 1, 'playing');
+        }
+
+        return {
+          ...previous,
+          status: previous.status === 'ready' || previous.status === 'paused'
+            ? 'playing'
+            : previous.status,
+        };
+      });
       return;
     }
 
@@ -656,6 +688,18 @@ export default function HomeScreen() {
         },
       }));
     }
+  };
+
+  const resetActiveGame = () => {
+    if (mode === 'Classic') {
+      setClassicGame((previous) => ({
+        ...createInitialClassicState(),
+        highScore: previous.highScore,
+      }));
+      return;
+    }
+
+    setBreakerGame(createBreakerState(breakerBoardWidth, breakerBoardHeight, 1, 'ready'));
   };
 
   const renderClassicScreen = () => {
@@ -722,8 +766,8 @@ export default function HomeScreen() {
                       style={[
                         styles.previewCell,
                         {
-                          width: 14,
-                          height: 14,
+                          width: 7,
+                          height: 7,
                           backgroundColor: cell,
                           borderColor: cell === '#0f172a' ? '#0f172a' : '#2b4a2f',
                         },
@@ -749,7 +793,7 @@ export default function HomeScreen() {
 
   const renderBreakerScreen = () => {
     const boardWidth = breakerBoardWidth;
-    const boardHeight = 350;
+    const boardHeight = breakerBoardHeight;
 
     return (
       <View style={styles.screenContent}>
@@ -821,58 +865,162 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.consoleShell, { width: shellWidth, height: shellHeight }]}>
         <View style={styles.topHeader}>
-          <Text style={styles.topBrand}>BRICK GAME</Text>
-          <Text style={styles.themeTag}>{soundOn ? 'SOUND ON' : 'SOUND OFF'}</Text>
+          <Text style={styles.topBrand}>SUPER</Text>
+          <Text style={styles.modelTag}>9999 IN 1</Text>
         </View>
 
-        <View style={styles.modeRow}>
-          <Pressable onPress={() => setMode('Classic')} style={[styles.modeButton, mode === 'Classic' && styles.modeButtonActive]}>
-            <Text style={styles.modeButtonText}>Classic</Text>
-          </Pressable>
-          <Pressable onPress={() => setMode('Brick Breaker')} style={[styles.modeButton, mode === 'Brick Breaker' && styles.modeButtonActive]}>
-            <Text style={styles.modeButtonText}>Breaker</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.lcdFrame}>
-          {mode === 'Classic' ? renderClassicScreen() : renderBreakerScreen()}
-        </View>
-
-        <View style={styles.controlsWrap}>
-          <View style={styles.mainControlsRow}>
-            <Pressable onPress={() => (mode === 'Classic' ? handleClassicAction('left') : handleBreakerAction('left'))} style={styles.yellowButton}>
-              <Text style={styles.buttonGlyph}>◀</Text>
-            </Pressable>
-            <Pressable onPress={() => (mode === 'Classic' ? handleClassicAction('right') : handleBreakerAction('right'))} style={styles.yellowButton}>
-              <Text style={styles.buttonGlyph}>▶</Text>
-            </Pressable>
-            <Pressable onPress={() => (mode === 'Classic' ? handleClassicAction('down') : handleBreakerAction('down'))} style={styles.yellowButton}>
-              <Text style={styles.buttonGlyph}>▼</Text>
-            </Pressable>
-            <Pressable onPress={() => (mode === 'Classic' ? handleClassicAction('rotate') : handleBreakerAction('rotate'))} style={[styles.yellowButton, styles.rotateButton]}>
-              <Text style={styles.buttonGlyph}>⟳</Text>
-            </Pressable>
+        <View style={styles.displayHousing}>
+          <View style={styles.decorColumn}>
+            {Array.from({ length: 6 }, (_, index) => (
+              <View key={`left-decor-${index}`} style={styles.decorCluster}>
+                <View style={styles.decorTile} />
+                <View style={styles.decorTile} />
+                <View style={styles.decorTile} />
+                <View style={styles.decorTile} />
+              </View>
+            ))}
           </View>
 
-          <View style={styles.smallButtonRow}>
-            <Pressable onPress={() => (mode === 'Classic' ? handleClassicAction('start') : handleBreakerAction('start'))} style={styles.greenButton}>
-              <Text style={styles.greenButtonText}>START</Text>
-            </Pressable>
-            <Pressable onPress={() => (mode === 'Classic' ? handleClassicAction('pause') : handleBreakerAction('pause'))} style={styles.greenButton}>
-              <Text style={styles.greenButtonText}>PAUSE</Text>
-            </Pressable>
-            <Pressable onPress={() => setSoundOn((value) => !value)} style={styles.greenButton}>
-              <Text style={styles.greenButtonText}>{soundOn ? 'SOUND' : 'MUTE'}</Text>
-            </Pressable>
-            <Pressable onPress={() => setMode((current) => (current === 'Classic' ? 'Brick Breaker' : 'Classic'))} style={styles.greenButton}>
-              <Text style={styles.greenButtonText}>MODE</Text>
-            </Pressable>
+          <View style={styles.displayCenter}>
+            <View style={styles.modeRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === 'Classic' }}
+                onPress={() => setMode('Classic')}
+                style={[styles.modeButton, mode === 'Classic' && styles.modeButtonActive]}>
+                <Text style={styles.modeButtonText}>CLASSIC</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === 'Brick Breaker' }}
+                onPress={() => setMode('Brick Breaker')}
+                style={[styles.modeButton, mode === 'Brick Breaker' && styles.modeButtonActive]}>
+                <Text style={styles.modeButtonText}>BREAKER</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.lcdFrame}>
+              {mode === 'Classic' ? renderClassicScreen() : renderBreakerScreen()}
+            </View>
+          </View>
+
+          <View style={styles.decorColumn}>
+            {Array.from({ length: 6 }, (_, index) => (
+              <View key={`right-decor-${index}`} style={styles.decorCluster}>
+                <View style={styles.decorTile} />
+                <View style={styles.decorTile} />
+                <View style={styles.decorTile} />
+                <View style={styles.decorTile} />
+              </View>
+            ))}
           </View>
         </View>
 
-        <View style={styles.footerRow}>
-          <Text style={styles.footerLabel}>{mode}</Text>
-          <Text style={styles.footerLabel}>LCD</Text>
+        <View style={styles.bodyGap}>
+          <View style={styles.bodySeam} />
+        </View>
+
+        <View style={styles.utilityRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Start game"
+            onPress={() => (mode === 'Classic' ? handleClassicAction('start') : handleBreakerAction('start'))}
+            style={styles.utilityButton}>
+            <View style={styles.utilityCap} />
+            <Text style={styles.utilityText}>ON/OFF</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Pause or resume game"
+            onPress={() => (mode === 'Classic' ? handleClassicAction('pause') : handleBreakerAction('pause'))}
+            style={styles.utilityButton}>
+            <View style={styles.utilityCap} />
+            <Text style={styles.utilityText}>S/P</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={soundOn ? 'Mute sound' : 'Enable sound'}
+            onPress={() => setSoundOn((value) => !value)}
+            style={styles.utilityButton}>
+            <View style={styles.utilityCap} />
+            <Text style={styles.utilityText}>SOUND</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reset game"
+            onPress={resetActiveGame}
+            style={styles.utilityButton}>
+            <View style={styles.utilityCap} />
+            <Text style={styles.utilityText}>RESET</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.gameControlsRow}>
+          <View style={styles.directionPad}>
+            <View style={styles.padRow}>
+              <View style={styles.padSpacer} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Drop piece"
+                onPress={() => mode === 'Classic'
+                  ? setClassicGame((previous) => dropClassicPiece(previous))
+                  : handleBreakerAction('start')}
+                style={styles.padButton}>
+                <Text style={styles.buttonGlyph}>▲</Text>
+              </Pressable>
+              <View style={styles.padSpacer} />
+            </View>
+            <View style={styles.padRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Move left"
+                onPress={() => (mode === 'Classic' ? handleClassicAction('left') : handleBreakerAction('left'))}
+                style={styles.padButton}>
+                <Text style={styles.buttonGlyph}>◀</Text>
+              </Pressable>
+              <View style={styles.padHub} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Move right"
+                onPress={() => (mode === 'Classic' ? handleClassicAction('right') : handleBreakerAction('right'))}
+                style={styles.padButton}>
+                <Text style={styles.buttonGlyph}>▶</Text>
+              </Pressable>
+            </View>
+            <View style={styles.padRow}>
+              <View style={styles.padSpacer} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Move down"
+                onPress={() => (mode === 'Classic' ? handleClassicAction('down') : handleBreakerAction('down'))}
+                style={styles.padButton}>
+                <Text style={styles.buttonGlyph}>▼</Text>
+              </Pressable>
+              <View style={styles.padSpacer} />
+            </View>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Rotate"
+            onPress={() => (mode === 'Classic' ? handleClassicAction('rotate') : handleBreakerAction('rotate'))}
+            style={styles.rotateControl}>
+            <View style={[styles.utilityCap, styles.rotateCap]}>
+              <Text style={styles.rotateGlyph}>⟳</Text>
+            </View>
+            <Text style={styles.controlLabel}>ROTATE</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.brandSpacer} />
+
+        <View style={styles.logoArea}>
+          <Text style={styles.logoText}>BRICK GAME</Text>
+          <View style={styles.modelRow}>
+            <View style={styles.modelLine} />
+            <Text style={styles.modelCode}>E-9999</Text>
+            <View style={styles.modelLine} />
+          </View>
         </View>
       </View>
     </SafeAreaView>
@@ -882,79 +1030,115 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0b1220',
+    backgroundColor: '#071b4d',
     alignItems: 'center',
     justifyContent: 'center',
   },
   consoleShell: {
-    backgroundColor: '#175cc5',
-    borderRadius: 28,
-    padding: 18,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.4,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
+    backgroundColor: '#0758c7',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: '#03153d',
+    shadowOpacity: 0.46,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 9 },
     borderWidth: 3,
-    borderColor: '#2a6fe5',
+    borderColor: '#4b91f2',
     alignItems: 'center',
   },
   topHeader: {
     width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
+    height: 30,
+    marginBottom: 5,
   },
   topBrand: {
     color: '#dfe9ff',
-    fontSize: 21,
+    fontSize: 17,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0,
   },
-  themeTag: {
+  modelTag: {
+    position: 'absolute',
+    right: 3,
     color: '#dfe9ff',
-    fontSize: 10,
+    fontSize: 7,
     fontWeight: '700',
-    letterSpacing: 1,
-    opacity: 0.8,
+  },
+  displayHousing: {
+    width: '100%',
+    height: 228,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  decorColumn: {
+    width: 24,
+    height: '82%',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  decorCluster: {
+    width: 18,
+    height: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignContent: 'center',
+    gap: 1,
+  },
+  decorTile: {
+    width: 7,
+    height: 7,
+    borderWidth: 1,
+    borderColor: '#9bc8ff',
+    backgroundColor: '#1765ce',
+  },
+  displayCenter: {
+    width: '60%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modeRow: {
     width: '100%',
+    height: 20,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 4,
+    gap: 4,
   },
   modeButton: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#153b8b',
-    marginHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+    backgroundColor: '#17458e',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#4c8af7',
+    borderColor: '#6fa8f3',
   },
   modeButtonActive: {
-    backgroundColor: '#2357c7',
+    backgroundColor: '#3476d0',
   },
   modeButtonText: {
     color: '#edf6ff',
-    fontSize: 12,
+    fontSize: 7,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0,
   },
   lcdFrame: {
     width: '100%',
     flex: 1,
-    backgroundColor: '#9dac8c',
-    borderRadius: 16,
-    padding: 10,
+    backgroundColor: '#8e9d7e',
+    borderRadius: 5,
+    padding: 6,
     borderWidth: 4,
-    borderColor: '#5e6e59',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
+    borderColor: '#a5b594',
+    shadowColor: '#03153d',
+    shadowOpacity: 0.32,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
   screenContent: {
     flex: 1,
@@ -963,15 +1147,15 @@ const styles = StyleSheet.create({
   lcdPanel: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 8,
+    gap: 4,
     flex: 1,
   },
   boardWrap: {
     flex: 1,
     backgroundColor: '#bde7c6',
-    borderRadius: 8,
-    padding: 4,
-    borderWidth: 2,
+    borderRadius: 2,
+    padding: 2,
+    borderWidth: 1,
     borderColor: '#1a2d1f',
   },
   boardRow: {
@@ -979,8 +1163,8 @@ const styles = StyleSheet.create({
   },
   boardCell: {
     borderWidth: 1,
-    borderRadius: 2,
-    margin: 1,
+    borderRadius: 1,
+    margin: 0.5,
   },
   fallingCell: {
     position: 'absolute',
@@ -988,40 +1172,40 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   sidePanel: {
-    width: 92,
+    width: 48,
     backgroundColor: '#bde7c6',
-    borderRadius: 8,
-    padding: 6,
-    borderWidth: 2,
+    borderRadius: 2,
+    padding: 3,
+    borderWidth: 1,
     borderColor: '#1a2d1f',
     justifyContent: 'space-between',
   },
   sideTitle: {
     color: '#0f172a',
-    fontSize: 12,
+    fontSize: 8,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   previewGrid: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   previewRow: {
     flexDirection: 'row',
   },
   previewCell: {
     borderWidth: 1,
-    borderRadius: 2,
-    margin: 1,
+    borderRadius: 1,
+    margin: 0.5,
   },
   statsBlock: {
     gap: 2,
   },
   statText: {
     color: '#0f172a',
-    fontSize: 11,
+    fontSize: 7,
     fontWeight: '800',
   },
   breakerViewport: {
@@ -1029,15 +1213,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#bde7c6',
-    borderRadius: 8,
-    padding: 6,
-    borderWidth: 2,
+    borderRadius: 2,
+    padding: 4,
+    borderWidth: 1,
     borderColor: '#1a2d1f',
   },
   breakerBoard: {
     position: 'relative',
     backgroundColor: '#0f172a',
-    borderRadius: 12,
+    borderRadius: 3,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#2f3f52',
@@ -1075,69 +1259,153 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  controlsWrap: {
+  bodyGap: {
     width: '100%',
-    marginTop: 16,
-  },
-  mainControlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  yellowButton: {
-    width: 62,
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: '#f4d236',
-    borderWidth: 2,
-    borderColor: '#efb300',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-  },
-  rotateButton: {
-    width: 74,
-  },
-  buttonGlyph: {
-    color: '#153b8b',
-    fontSize: 26,
-    fontWeight: '900',
-  },
-  smallButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  greenButton: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: '#5fd36a',
-    borderWidth: 2,
-    borderColor: '#2f7d39',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  greenButtonText: {
-    color: '#0b2b12',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  footerRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
+    height: 36,
+    justifyContent: 'flex-end',
     paddingHorizontal: 8,
   },
-  footerLabel: {
-    color: '#dfe9ff',
-    fontSize: 11,
+  bodySeam: {
+    width: '100%',
+    height: 16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#1766d0',
+    backgroundColor: '#0754bc',
+  },
+  utilityRow: {
+    width: '100%',
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginBottom: 12,
+  },
+  utilityButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  utilityCap: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#f4d228',
+    borderWidth: 1,
+    borderColor: '#e5ad00',
+    shadowColor: '#03245e',
+    shadowOpacity: 0.38,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  utilityText: {
+    color: '#e4efff',
+    fontSize: 7,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  gameControlsRow: {
+    width: '100%',
+    height: 106,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  directionPad: {
+    width: 108,
+    height: 82,
+    justifyContent: 'space-between',
+  },
+  padRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  padSpacer: {
+    width: 34,
+    height: 25,
+  },
+  padButton: {
+    width: 34,
+    height: 25,
+    borderRadius: 4,
+    backgroundColor: '#f4d228',
+    borderWidth: 1,
+    borderColor: '#e4b000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  padHub: {
+    width: 30,
+    height: 25,
+    backgroundColor: '#164c9d',
+    borderRadius: 3,
+  },
+  rotateControl: {
+    width: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rotateCap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rotateGlyph: {
+    color: '#17458e',
+    fontSize: 31,
     fontWeight: '800',
-    letterSpacing: 1,
+  },
+  controlLabel: {
+    color: '#e4efff',
+    fontSize: 7,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  buttonGlyph: {
+    color: '#17458e',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  logoArea: {
+    width: '100%',
+    height: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  brandSpacer: {
+    flex: 1,
+    minHeight: 48,
+  },
+  logoText: {
+    color: '#dbeaff',
+    fontSize: 20,
+    fontWeight: '900',
+    transform: [{ rotate: '-20deg' }],
+    textShadowColor: '#17458e',
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 2,
+  },
+  modelRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 8,
+    marginTop: 2,
+  },
+  modelLine: {
+    flex: 1,
+    borderTopWidth: 1,
+    borderColor: '#9abff1',
+  },
+  modelCode: {
+    color: '#dfe9ff',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });
