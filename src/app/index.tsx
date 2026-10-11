@@ -570,10 +570,10 @@ type GameMode = (typeof gameModes)[number];
 
 export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const consoleWidth = Math.min(screenWidth - 32, 380);
+  const consoleWidth = Math.min(screenWidth - 32, 460);
   const shellWidth = consoleWidth;
   const shellHeight = Math.min(Math.max(screenHeight * 0.94, 540), 820);
-  const breakerBoardWidth = shellWidth - 132;
+  const breakerBoardWidth = shellWidth - 148;
   const breakerBoardHeight = Math.min(300, Math.max(170, shellHeight * 0.36));
 
   const [mode, setMode] = useState<GameMode>('Classic');
