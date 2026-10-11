@@ -570,11 +570,11 @@ type GameMode = (typeof gameModes)[number];
 
 export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const consoleWidth = Math.min(screenWidth - 42, 320);
-  const shellWidth = consoleWidth;
-  const shellHeight = Math.min(Math.max(screenHeight * 0.94, 620), 820);
-  const breakerBoardWidth = shellWidth - 172;
-  const breakerBoardHeight = 180;
+  // Keep the console close to a real handheld's tall portrait proportions.
+  const shellWidth = Math.min(screenWidth - 20, screenHeight * 0.48, 460);
+  const shellHeight = Math.max(520, Math.min(screenHeight - 8, 960));
+  const breakerBoardWidth = Math.round(shellWidth * 0.64);
+  const breakerBoardHeight = Math.round(shellHeight * 0.32);
 
   const [mode, setMode] = useState<GameMode>('Classic');
   const [soundOn, setSoundOn] = useState(true);
@@ -584,7 +584,7 @@ export default function HomeScreen() {
   );
 
   const boardCellSize = useMemo(
-    () => Math.max(8, Math.min(9, Math.floor((shellWidth - 220) / BOARD_COLS))),
+    () => Math.min(18, Math.max(14, Math.floor((shellWidth - 200) / BOARD_COLS))),
     [shellWidth],
   );
 
@@ -865,11 +865,17 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.consoleShell, { width: shellWidth, height: shellHeight }]}>
         <View style={styles.topHeader}>
-          <Text style={styles.topBrand}>SUPER</Text>
-          <Text style={styles.modelTag}>9999 IN 1</Text>
+          <Text style={styles.topBrand}>BRICK GAME</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={soundOn ? 'Mute sound' : 'Enable sound'}
+            onPress={() => setSoundOn((value) => !value)}
+            style={styles.soundToggle}>
+            <Text style={styles.modelTag}>{soundOn ? 'SOUND ON' : 'SOUND OFF'}</Text>
+          </Pressable>
         </View>
 
-        <View style={styles.displayHousing}>
+        <View style={[styles.displayHousing, { height: shellHeight * 0.42 }]}>
           <View style={styles.decorColumn}>
             {Array.from({ length: 6 }, (_, index) => (
               <View key={`left-decor-${index}`} style={styles.decorCluster}>
@@ -916,34 +922,18 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.bodyGap}>
+        <View style={[styles.bodyGap, { height: shellHeight * 0.035 }]}>
           <View style={styles.bodySeam} />
         </View>
 
-        <View style={styles.utilityRow}>
+        <View style={[styles.utilityRow, { height: shellHeight * 0.085, marginBottom: shellHeight * 0.015 }]}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Start game"
+            accessibilityLabel="Power on or start game"
             onPress={() => (mode === 'Classic' ? handleClassicAction('start') : handleBreakerAction('start'))}
             style={styles.utilityButton}>
             <View style={styles.utilityCap} />
-            <Text style={styles.utilityText}>ON/OFF</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Pause or resume game"
-            onPress={() => (mode === 'Classic' ? handleClassicAction('pause') : handleBreakerAction('pause'))}
-            style={styles.utilityButton}>
-            <View style={styles.utilityCap} />
-            <Text style={styles.utilityText}>S/P</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={soundOn ? 'Mute sound' : 'Enable sound'}
-            onPress={() => setSoundOn((value) => !value)}
-            style={styles.utilityButton}>
-            <View style={styles.utilityCap} />
-            <Text style={styles.utilityText}>SOUND</Text>
+            <Text style={styles.utilityText}>POWER</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -953,9 +943,17 @@ export default function HomeScreen() {
             <View style={styles.utilityCap} />
             <Text style={styles.utilityText}>RESET</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Pause or resume game"
+            onPress={() => (mode === 'Classic' ? handleClassicAction('pause') : handleBreakerAction('pause'))}
+            style={styles.utilityButton}>
+            <View style={styles.utilityCap} />
+            <Text style={styles.utilityText}>START / PAUSE</Text>
+          </Pressable>
         </View>
 
-        <View style={styles.gameControlsRow}>
+        <View style={[styles.gameControlsRow, { height: shellHeight * 0.22 }]}>
           <View style={styles.directionPad}>
             <View style={styles.padRow}>
               <View style={styles.padSpacer} />
@@ -1014,7 +1012,7 @@ export default function HomeScreen() {
 
         <View style={styles.brandSpacer} />
 
-        <View style={styles.logoArea}>
+        <View style={[styles.logoArea, { height: shellHeight * 0.12, marginTop: shellHeight * 0.015 }]}>
           <Text style={styles.logoText}>BRICK GAME</Text>
           <View style={styles.modelRow}>
             <View style={styles.modelLine} />
@@ -1030,53 +1028,60 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#071b4d',
+    backgroundColor: '#07152f',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 4,
   },
   consoleShell: {
-    backgroundColor: '#0758c7',
-    borderRadius: 24,
+    backgroundColor: '#0875d1',
+    borderRadius: 34,
     paddingHorizontal: 14,
     paddingVertical: 12,
     shadowColor: '#03153d',
-    shadowOpacity: 0.46,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 9 },
-    borderWidth: 3,
-    borderColor: '#4b91f2',
+    shadowOpacity: 0.5,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    borderWidth: 4,
+    borderColor: '#58b8ff',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   topHeader: {
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 30,
-    marginBottom: 5,
+    height: 34,
+    marginBottom: 4,
   },
   topBrand: {
-    color: '#dfe9ff',
-    fontSize: 17,
+    color: '#062b59',
+    fontSize: 18,
     fontWeight: '900',
-    letterSpacing: 0,
+    letterSpacing: 1.5,
+  },
+  soundToggle: {
+    position: 'absolute',
+    right: 2,
+    top: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
   },
   modelTag: {
-    position: 'absolute',
-    right: 3,
-    color: '#dfe9ff',
-    fontSize: 7,
-    fontWeight: '700',
+    color: '#e9f5ff',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   displayHousing: {
     width: '100%',
-    height: 228,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   decorColumn: {
-    width: 24,
-    height: '82%',
+    width: 20,
+    height: '88%',
     alignItems: 'center',
     justifyContent: 'space-around',
   },
@@ -1093,52 +1098,54 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderWidth: 1,
-    borderColor: '#9bc8ff',
-    backgroundColor: '#1765ce',
+    borderColor: '#063d80',
+    backgroundColor: '#168be5',
   },
   displayCenter: {
-    width: '60%',
+    width: '78%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
   modeRow: {
     width: '100%',
-    height: 20,
+    height: 24,
     flexDirection: 'row',
-    marginBottom: 4,
-    gap: 4,
+    marginBottom: 5,
+    gap: 5,
   },
   modeButton: {
     flex: 1,
-    paddingVertical: 2,
-    borderRadius: 3,
-    backgroundColor: '#17458e',
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: '#07509b',
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#6fa8f3',
+    borderColor: '#8bcaff',
   },
   modeButtonActive: {
-    backgroundColor: '#3476d0',
+    backgroundColor: '#06376f',
+    borderColor: '#d5edff',
   },
   modeButtonText: {
-    color: '#edf6ff',
-    fontSize: 7,
-    fontWeight: '800',
-    letterSpacing: 0,
+    color: '#f4faff',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   lcdFrame: {
     width: '100%',
     flex: 1,
-    backgroundColor: '#8e9d7e',
-    borderRadius: 5,
-    padding: 6,
-    borderWidth: 4,
-    borderColor: '#a5b594',
+    backgroundColor: '#82977c',
+    borderRadius: 8,
+    padding: 7,
+    borderWidth: 5,
+    borderColor: '#b6d5ef',
     shadowColor: '#03153d',
-    shadowOpacity: 0.32,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.42,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
   screenContent: {
     flex: 1,
@@ -1147,16 +1154,17 @@ const styles = StyleSheet.create({
   lcdPanel: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 4,
+    gap: 6,
     flex: 1,
   },
   boardWrap: {
     flex: 1,
-    backgroundColor: '#bde7c6',
-    borderRadius: 2,
+    backgroundColor: '#91a88b',
+    borderRadius: 3,
     padding: 2,
     borderWidth: 1,
-    borderColor: '#1a2d1f',
+    borderColor: '#263a2c',
+    overflow: 'hidden',
   },
   boardRow: {
     flexDirection: 'row',
@@ -1164,33 +1172,33 @@ const styles = StyleSheet.create({
   boardCell: {
     borderWidth: 1,
     borderRadius: 1,
-    margin: 0.5,
+    margin: 0.35,
   },
   fallingCell: {
     position: 'absolute',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 2,
   },
   sidePanel: {
-    width: 48,
-    backgroundColor: '#bde7c6',
-    borderRadius: 2,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: '#1a2d1f',
+    width: '29%',
+    backgroundColor: '#91a88b',
+    borderRadius: 3,
+    padding: 5,
+    borderLeftWidth: 2,
+    borderColor: '#263a2c',
     justifyContent: 'space-between',
   },
   sideTitle: {
-    color: '#0f172a',
-    fontSize: 8,
-    fontWeight: '800',
+    color: '#102016',
+    fontSize: 10,
+    fontWeight: '900',
     textAlign: 'center',
-    marginBottom: 1,
+    marginBottom: 3,
   },
   previewGrid: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 5,
   },
   previewRow: {
     flexDirection: 'row',
@@ -1198,53 +1206,57 @@ const styles = StyleSheet.create({
   previewCell: {
     borderWidth: 1,
     borderRadius: 1,
-    margin: 0.5,
+    margin: 0.75,
   },
   statsBlock: {
-    gap: 2,
+    gap: 4,
   },
   statText: {
-    color: '#0f172a',
-    fontSize: 7,
-    fontWeight: '800',
+    color: '#102016',
+    fontSize: 9,
+    fontWeight: '900',
   },
   breakerViewport: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#bde7c6',
-    borderRadius: 2,
-    padding: 4,
+    backgroundColor: '#91a88b',
+    borderRadius: 3,
+    padding: 5,
     borderWidth: 1,
-    borderColor: '#1a2d1f',
+    borderColor: '#263a2c',
   },
   breakerBoard: {
     position: 'relative',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#82977c',
     borderRadius: 3,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#2f3f52',
+    borderWidth: 1,
+    borderColor: '#263a2c',
   },
   breakerBrick: {
     position: 'absolute',
-    borderRadius: 4,
+    borderRadius: 3,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(10, 35, 25, 0.55)',
   },
   breakerPaddle: {
     position: 'absolute',
     borderRadius: 999,
     backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#1e293b',
   },
   breakerBall: {
     position: 'absolute',
     borderRadius: 999,
     backgroundColor: '#f97316',
+    borderWidth: 1,
+    borderColor: '#7c2d12',
   },
   breakerOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'rgba(25, 43, 31, 0.76)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1261,25 +1273,22 @@ const styles = StyleSheet.create({
   },
   bodyGap: {
     width: '100%',
-    height: 36,
     justifyContent: 'flex-end',
-    paddingHorizontal: 8,
   },
   bodySeam: {
     width: '100%',
-    height: 16,
+    height: 10,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#1766d0',
-    backgroundColor: '#0754bc',
+    borderColor: '#0757a6',
+    backgroundColor: '#0664b9',
+    borderRadius: 5,
   },
   utilityRow: {
     width: '100%',
-    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    marginBottom: 12,
+    justifyContent: 'space-evenly',
   },
   utilityButton: {
     flex: 1,
@@ -1287,106 +1296,111 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   utilityCap: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#f4d228',
-    borderWidth: 1,
-    borderColor: '#e5ad00',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ffe51b',
+    borderWidth: 2,
+    borderColor: '#c99a00',
     shadowColor: '#03245e',
-    shadowOpacity: 0.38,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   utilityText: {
-    color: '#e4efff',
-    fontSize: 7,
-    fontWeight: '700',
-    marginTop: 3,
+    color: '#062b59',
+    fontSize: 8,
+    fontWeight: '900',
+    marginTop: 5,
+    textAlign: 'center',
   },
   gameControlsRow: {
     width: '100%',
-    height: 106,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
   },
   directionPad: {
-    width: 108,
-    height: 82,
+    width: 184,
+    height: 174,
     justifyContent: 'space-between',
   },
   padRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 1,
   },
   padSpacer: {
-    width: 34,
-    height: 25,
+    width: 58,
+    height: 58,
   },
   padButton: {
-    width: 34,
-    height: 25,
-    borderRadius: 4,
-    backgroundColor: '#f4d228',
-    borderWidth: 1,
-    borderColor: '#e4b000',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#ffe51b',
+    borderWidth: 2,
+    borderColor: '#c99a00',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#03245e',
+    shadowOpacity: 0.42,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   padHub: {
-    width: 30,
-    height: 25,
-    backgroundColor: '#164c9d',
-    borderRadius: 3,
+    width: 24,
+    height: 24,
+    backgroundColor: '#06376f',
+    transform: [{ rotate: '45deg' }],
   },
   rotateControl: {
-    width: 82,
+    width: 116,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rotateCap: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rotateGlyph: {
-    color: '#17458e',
-    fontSize: 31,
+    color: '#06376f',
+    fontSize: 48,
     fontWeight: '800',
   },
   controlLabel: {
-    color: '#e4efff',
-    fontSize: 7,
-    fontWeight: '700',
-    marginTop: 3,
+    color: '#062b59',
+    fontSize: 9,
+    fontWeight: '900',
+    marginTop: 5,
   },
   buttonGlyph: {
-    color: '#17458e',
-    fontSize: 14,
-    fontWeight: '800',
+    color: '#06376f',
+    fontSize: 25,
+    fontWeight: '900',
   },
   logoArea: {
     width: '100%',
-    height: 62,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
   },
   brandSpacer: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 8,
   },
   logoText: {
-    color: '#dbeaff',
-    fontSize: 20,
+    color: '#052b5c',
+    fontSize: 26,
     fontWeight: '900',
-    transform: [{ rotate: '-20deg' }],
-    textShadowColor: '#17458e',
+    letterSpacing: 1.5,
+    transform: [{ rotate: '-18deg' }],
+    textShadowColor: '#58b8ff',
     textShadowOffset: { width: 1, height: 2 },
     textShadowRadius: 2,
   },
@@ -1396,16 +1410,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 8,
-    marginTop: 2,
+    marginTop: 8,
   },
   modelLine: {
     flex: 1,
-    borderTopWidth: 1,
-    borderColor: '#9abff1',
+    borderTopWidth: 2,
+    borderColor: '#0757a6',
   },
   modelCode: {
-    color: '#dfe9ff',
-    fontSize: 9,
-    fontWeight: '800',
+    color: '#e8f4ff',
+    fontSize: 10,
+    fontWeight: '900',
   },
 });
