@@ -1088,7 +1088,10 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.bodyGap}>
-          <View style={styles.bodySeam} />
+          <View style={styles.bodyMound}>
+            <View style={styles.bodyMoundHighlight} />
+            <View style={styles.bodyMoundLowerEdge} />
+          </View>
         </View>
 
         <View style={styles.utilityRow}>
@@ -1601,22 +1604,50 @@ const styles = StyleSheet.create({
   },
   bodyGap: {
     width: '100%',
-    height: 36,
+    height: 42,
     justifyContent: 'flex-end',
-    paddingHorizontal: 8,
+    paddingHorizontal: 0,
   },
-  bodySeam: {
+  bodyMound: {
     width: '100%',
-    height: 12,
-    borderTopWidth: 2,
-    borderBottomWidth: 2,
-    borderTopColor: '#8deaff',
-    borderBottomColor: '#075675',
-    backgroundColor: '#0d7197',
+    height: 30,
+    position: 'relative',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    backgroundColor: '#168bb5',
+    borderTopWidth: 3,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderTopColor: '#9beeff',
+    borderLeftColor: '#55c8e4',
+    borderRightColor: '#08749a',
     shadowColor: '#04384d',
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  bodyMoundHighlight: {
+    position: 'absolute',
+    top: 3,
+    left: 16,
+    right: 16,
+    height: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(190, 247, 255, 0.48)',
+  },
+  bodyMoundLowerEdge: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 5,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    backgroundColor: '#075675',
+    opacity: 0.42,
   },
   utilityRow: {
     width: '68%',
